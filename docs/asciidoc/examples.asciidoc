@@ -1,13 +1,30 @@
 [[examples]]
-== Examples
+= Examples
 
+[partintro]
+--
 These examples should help illustrate how to build your own <<actions,actions>>.
 
 Starting in Curator 4.1, you can use <<envvars,environment variables>> in your
 configuration files.
 
+* <<ex_alias,alias>>
+* <<ex_allocation,allocation>>
+* <<ex_close,close>>
+* <<ex_cluster_routing,cluster_routing>>
+* <<ex_create_index,create_index>>
+* <<ex_delete_indices,delete_indices>>
+* <<ex_delete_snapshots,delete_snapshots>>
+* <<ex_forcemerge,forcemerge>>
+* <<ex_open,open>>
+* <<ex_replicas,replicas>>
+* <<ex_restore,restore>>
+* <<ex_snapshot,snapshot>>
+
+--
+
 [[ex_alias]]
-=== alias
+== alias
 
 [source,text]
 -------------
@@ -44,6 +61,7 @@ actions:
         unit_count: 7
         exclude:
       - filtertype: age
+        source: name
         direction: younger
         timestring: '%Y.%m.%d'
         unit: days
@@ -64,7 +82,7 @@ actions:
 -------------
 
 [[ex_allocation]]
-=== allocation
+== allocation
 
 [source,text]
 -------------
@@ -104,7 +122,7 @@ actions:
 -------------
 
 [[ex_close]]
-=== close
+== close
 
 [source,text]
 -------------
@@ -140,8 +158,56 @@ actions:
       exclude:
 -------------
 
+
+[[ex_cluster_routing]]
+== cluster_routing
+
+[source,text]
+-------------
+---
+# Remember, leave a key empty if there is no value.  None will be a string,
+# not a Python "NoneType"
+#
+# Also remember that all examples have 'disable_action' set to True.  If you
+# want to use this action as a template, be sure to set this to False after
+# copying it.
+#
+# This action example has a blank spot at action ID 2.  This is to show that
+# Curator can disable allocation before one or more actions, and then re-enable
+# it afterward.
+actions:
+  1:
+    action: cluster_routing
+    description: >-
+      Disable shard routing for the entire cluster.
+    options:
+      routing_type: allocation
+      value: none
+      setting: enable
+      wait_for_completion: False
+      timeout_override:
+      continue_if_exception: False
+      disable_action: True
+  2:
+    action: (any other action details go here)
+    ...
+  3:
+    action: cluster_routing
+    description: >-
+      Re-enable shard routing for the entire cluster.
+    options:
+      routing_type: allocation
+      value: all
+      setting: enable
+      wait_for_completion: False
+      timeout_override:
+      continue_if_exception: False
+      disable_action: True
+-------------
+
+
 [[ex_create_index]]
-=== create_index
+== create_index
 
 [source,text]
 -------------
@@ -169,7 +235,7 @@ actions:
 
 
 [[ex_delete_indices]]
-=== delete_indices
+== delete_indices
 
 [source,text]
 -------------
@@ -207,7 +273,7 @@ actions:
 -------------
 
 [[ex_delete_snapshots]]
-=== delete_snapshots
+== delete_snapshots
 
 [source,text]
 -------------
@@ -244,7 +310,7 @@ actions:
 
 
 [[ex_forcemerge]]
-=== forcemerge
+== forcemerge
 
 [source,text]
 -------------
@@ -284,7 +350,7 @@ actions:
 -------------
 
 [[ex_open]]
-=== open
+== open
 
 [source,text]
 -------------
@@ -327,7 +393,7 @@ actions:
 -------------
 
 [[ex_replicas]]
-=== replicas
+== replicas
 
 [source,text]
 -------------
@@ -364,7 +430,7 @@ actions:
 -------------
 
 [[ex_restore]]
-=== restore
+== restore
 
 [source,text]
 -------------
@@ -412,7 +478,7 @@ actions:
 -------------
 
 [[ex_snapshot]]
-=== snapshot
+== snapshot
 
 [source,text]
 -------------

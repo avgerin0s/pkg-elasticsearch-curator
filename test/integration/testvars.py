@@ -20,6 +20,15 @@ client_config = ('---\n'
 '  logformat: default\n'
 '  blacklist: []\n')
 
+client_conf_logfile = ('---\n'
+'client:\n'
+'  hosts: {0}\n'
+'  port: {1}\n'
+'\n'
+'logging:\n'
+'  loglevel: DEBUG\n'
+'  logfile: {2}\n')
+
 client_config_envvars = ('---\n'
 'client:\n'
 '  hosts: {0}\n'
@@ -185,6 +194,16 @@ allocation_test = ('---\n'
 '      - filtertype: pattern\n'
 '        kind: prefix\n'
 '        value: my\n')
+
+cluster_routing_test = ('---\n'
+'actions:\n'
+'  1:\n'
+'    description: "Alter cluster routing by routing_type/value"\n'
+'    action: cluster_routing\n'
+'    options:\n'
+'      routing_type: {0}\n'
+'      value: {1}\n'
+'      setting: enable\n')
 
 optionless_proto = ('---\n'
 'actions:\n'
@@ -531,3 +550,8 @@ test_682 = ('---\n'
 '      kind: prefix\n'
 '      value: logstash-\n'
 '      exclude:\n')
+
+CRA_all = {
+    u'persistent':{},
+    u'transient':{u'cluster':{u'routing':{u'allocation':{u'enable':u'all'}}}}
+}
