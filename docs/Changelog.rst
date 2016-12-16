@@ -3,6 +3,178 @@
 Changelog
 =========
 
+4.2.4 (7 December 2016)
+-----------------------
+
+**Bug Fixes**
+
+  * ``--wait_for_completion`` should be `True` by default for Snapshot singleton
+    action.  Reported in #829 (untergeek)
+  * Increase `version_max` to 5.1.99. Prematurely reported in #832 (untergeek)
+  * Make the '.security' index visible for snapshots so long as proper
+    credentials are used. Reported in #826 (untergeek)
+
+4.2.3.post1 (22 November 2016)
+------------------------------
+
+This fix is `only` going in for ``pip``-based installs.  There are no other code
+changes.
+
+**Bug Fixes**
+
+  * Fixed incorrect assumption of PyPI picking up dependency for certifi.  It
+    is still a dependency, but should not affect ``pip`` installs with an error
+    any more.  Reported in #821 (untergeek)
+
+
+4.2.3 (21 November 2016)
+------------------------
+
+4.2.2 was pulled immediately after release after it was discovered that the
+Windows binary distributions were still not including the certifi-provided
+certificates.  This has now been remedied.
+
+**General**
+
+  * ``certifi`` is now officially a requirement.
+  * ``setup.py`` now forcibly includes the ``certifi`` certificate PEM file in
+    the "frozen" distributions (i.e., the compiled versions).  The
+    ``get_client`` method was updated to reflect this and catch it for both the
+    Linux and Windows binary distributions.  This should `finally` put to rest
+    #810
+
+4.2.2 (21 November 2016)
+------------------------
+
+**Bug Fixes**
+
+  * The certifi-provided certificates were not propagating to the compiled
+    RPM/DEB packages.  This has been corrected.  Reported in #810 (untergeek)
+
+**General**
+
+  * Added missing ``--ignore_empty_list`` option to singleton actions. Requested
+    in #812 (untergeek)
+
+**Documentation**
+
+  * Add a FAQ entry regarding the click module's need for Unicode when using
+    Python 3.  Kind of a bug fix too, as the entry_points were altered to catch
+    this omission and report a potential solution on the command-line. Reported
+    in #814 (untergeek)
+  * Change the "Command-Line" documentation header to be "Running Curator"
+
+4.2.1 (8 November 2016)
+-----------------------
+
+**Bug Fixes**
+
+  * In the course of package release testing, an undesirable scenario was
+    caught where boolean flags default values for ``curator_cli`` were
+    improperly overriding values from a yaml config file.
+
+**General**
+
+  * Adding in direct download URLs for the RPM, DEB, tarball and zip packages.
+
+4.2.0 (4 November 2016)
+-----------------------
+
+**New Features**
+
+  * Shard routing allocation enable/disable. This will allow you to disable
+    shard allocation routing before performing one or more actions, and then
+    re-enable after it is complete. Requested in #446 (untergeek)
+  * Curator 3.x-style command-line.  This is now ``curator_cli``, to
+    differentiate between the current binary.  Not all actions are available,
+    but the most commonly used ones are.  With the addition in 4.1.0 of schema
+    and configuration validation, there's even a way to still do filter chaining
+    on the command-line! Requested in #767, and by many other users (untergeek)
+
+**General**
+
+  * Update testing to the most recent versions.
+  * Lock elasticsearch-py module version at >= 2.4.0 and <= 3.0.0.  There are
+    API changes in the 5.0 release that cause tests to fail.
+
+**Bug Fixes**
+
+  * Guarantee that binary packages are built from the latest Python + libraries.
+    This ensures that SSL/TLS will work without warning messages about insecure
+    connections, unless they actually are insecure. Reported in #780, though
+    the reported problem isn't what was fixed. The fix is needed based on what
+    was discovered while troubleshooting the problem. (untergeek)
+
+4.1.2 (6 October 2016)
+----------------------
+
+This release does not actually add any new code to Curator, but instead improves
+documentation and includes new linux binary packages.
+
+**General**
+
+  * New Curator binary packages for common Linux systems!
+    These will be found in the same repositories that the python-based packages
+    are in, but have no dependencies.  All necessary libraries/modules are
+    bundled with the binary, so everything should work out of the box.
+    This feature doesn't change any other behavior, so it's not a major release.
+
+    These binaries have been tested in:
+      * CentOS 6 & 7
+      * Ubuntu 12.04, 14.04, 16.04
+      * Debian 8
+
+    They do not work in Debian 7 (library mismatch).  They may work in other
+    systems, but that is untested.
+
+    The script used is in the unix_packages directory.  The Vagrantfiles for
+    the various build systems are in the Vagrant directory.
+
+**Bug Fixes**
+
+  * The only bug that can be called a bug is actually a stray ``.exe`` suffix
+    in the binary package creation section (cx_freeze) of ``setup.py``.  The
+    Windows binaries should have ``.exe`` extensions, but not unix variants.
+  * Elasticsearch 5.0.0-beta1 testing revealed that a document ID is required
+    during document creation in tests.  This has been fixed, and a redundant bit
+    of code in the forcemerge integration test was removed.
+
+**Documentation**
+
+  * The documentation has been updated and improved.  Examples and installation
+    are now top-level events, with the sub-sections each having their own link.
+    They also now show how to install and use the binary packages, and the
+    section on installation from source has been improved.  The missing
+    section on installing the voluptuous schema verification module has been
+    written and included. #776 (untergeek)
+
+4.1.1 (27 September 2016)
+-------------------------
+
+**Bug Fixes**
+
+  * String-based booleans are now properly coerced.  This fixes an issue where
+    `True`/`False` were used in environment variables, but not recognized.
+    #765 (untergeek)
+
+  * Fix missing `count` method in ``__map_method`` in SnapshotList. Reported in
+    #766 (untergeek)
+
+**General**
+
+  * Update es_repo_mgr to use the same client/logging YAML config file.
+    Requested in #752 (untergeek)
+
+**Schema Validation**
+
+  * Cases where ``source`` was not defined in a filter (but should have been)
+    were informing users that a `timestring` field was there that shouldn't have
+    been.  This edge case has been corrected.
+
+**Documentation**
+
+  * Added notifications and FAQ entry to explain that AWS ES is not supported.
+
 4.1.0 (6 September 2016)
 ------------------------
 
