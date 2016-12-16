@@ -1,3 +1,14 @@
+elasticsearch-curator (4.2.4-1) unstable; urgency=medium
+
+  * New upstream release
+  * Build and ship asciidoc documentation as reference.txt.gz
+  * B-D on python{3,}-voluptuous and python{3,}-yaml; required for building
+    the sphinx documentation.
+  * Add curator_cli(1) manpage
+  * Update the curator(1) and es_repo_mgr(1) manpages
+
+ -- Apollon Oikonomopoulos <apoikos@debian.org>  Fri, 16 Dec 2016 14:50:51 +0200
+
 elasticsearch-curator (4.1.0-1) unstable; urgency=medium
 
   * New upstream release.
