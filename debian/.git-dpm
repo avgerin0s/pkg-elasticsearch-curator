@@ -2,10 +2,10 @@
 acc0aa55d20342d00b836491a650915dabb741c4
 acc0aa55d20342d00b836491a650915dabb741c4
 1ea533b9c772000e427d8b03a2b425489821d25a
-1ea533b9c772000e427d8b03a2b425489821d25a
-elasticsearch-curator_4.2.4.orig.tar.gz
-011b3cb34eb2927d732cf2ce0d22eabb3e45b9b1
-225965
+0853854035a54106dd650b5d39fbd1691e4712a6
+elasticsearch-curator_4.2.5.orig.tar.gz
+05cc71b83f98033bebb4b1ecd792e97408da6b95
+227607
 debianTag="debian/%e%v"
 patchedTag="patched/%e%v"
 upstreamTag="upstream/%e%u"
