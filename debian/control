@@ -3,7 +3,7 @@ Maintainer: Debian Python Modules Team <python-modules-team@lists.alioth.debian.
 Uploaders: Apollon Oikonomopoulos <apoikos@debian.org>
 Section: python
 Priority: optional
-Build-Depends: debhelper (>= 9),
+Build-Depends: debhelper (>= 10),
                w3m,
                dh-python,
                python-all,
