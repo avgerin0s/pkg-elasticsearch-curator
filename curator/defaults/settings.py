@@ -3,9 +3,9 @@ from voluptuous import *
 
 # Elasticsearch versions supported
 def version_max():
-    return (5, 1, 99)
+    return (5, 99, 99)
 def version_min():
-    return (2, 0, 0)
+    return (5, 0, 0)
 
 # Default Config file location
 def config_file():
@@ -23,9 +23,11 @@ def regex_map():
 def date_regex():
     return {
         'Y' : '4',
+        'G' : '4',
         'y' : '2',
         'm' : '2',
         'W' : '2',
+        'V' : '2',
         'U' : '2',
         'd' : '2',
         'H' : '2',
@@ -47,8 +49,11 @@ def index_actions():
         'create_index',
         'delete_indices',
         'forcemerge',
+        'index_settings',
         'open',
+        'reindex',
         'replicas',
+        'rollover',
         'snapshot',
     ]
 
@@ -70,11 +75,12 @@ def index_filtertypes():
         'none',
         'opened',
         'pattern',
+        'period',
         'space',
     ]
 
 def snapshot_filtertypes():
-    return ['age', 'count', 'none', 'pattern', 'state']
+    return ['age', 'count', 'none', 'pattern', 'period', 'state']
 
 def all_filtertypes():
     return sorted(list(set(index_filtertypes() + snapshot_filtertypes())))
@@ -89,3 +95,30 @@ def default_options():
 
 def default_filters():
     return { 'filters' : [{ 'filtertype' : 'none' }] }
+
+def structural_filter_elements():
+    return {
+        Optional('aliases'): Any(str, [str], unicode, [unicode]),
+        Optional('allocation_type'): Any(str, unicode),
+        Optional('count'): Coerce(int),
+        Optional('direction'): Any(str, unicode),
+        Optional('disk_space'): float,
+        Optional('epoch'): Any(Coerce(int), None),
+        Optional('exclude'): Any(int, str, unicode, bool, None),
+        Optional('field'): Any(str, unicode, None),
+        Optional('key'): Any(str, unicode),
+        Optional('kind'): Any(str, unicode),
+        Optional('max_num_segments'): Coerce(int),
+        Optional('reverse'): Any(int, str, unicode, bool, None),
+        Optional('range_from'): Coerce(int),
+        Optional('range_to'): Coerce(int),
+        Optional('source'): Any(str, unicode),
+        Optional('state'): Any(str, unicode),
+        Optional('stats_result'): Any(str, unicode, None),
+        Optional('timestring'): Any(str, unicode, None),
+        Optional('unit'): Any(str, unicode),
+        Optional('unit_count'): Coerce(int),
+        Optional('use_age'): Boolean(),
+        Optional('value'): Any(int, float, str, unicode, bool),
+        Optional('week_starts_on'): Any(str, unicode, None),
+    }

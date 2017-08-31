@@ -67,8 +67,7 @@ def _actionator(action, action_obj, dry_run=True):
         else:
             action_obj.do_action()
     except Exception as e:
-        if str(type(e)) == "<class 'curator.exceptions.NoIndices'>" or \
-            str(type(e)) == "<class 'curator.exceptions.NoSnapshots'>":
+        if isinstance(e, NoIndices) or isinstance(e, NoSnapshots):
             logger.error(
                 'Unable to complete action "{0}".  No actionable items '
                 'in list: {1}'.format(action, type(e))
@@ -88,7 +87,7 @@ def _do_filters(list_object, filters, ignore=False):
         list_object.iterate_filters(filters)
         list_object.empty_list_check()
     except (NoIndices, NoSnapshots) as e:
-        if str(type(e)) == "<class 'curator.exceptions.NoIndices'>":
+        if isinstance(e, NoIndices):
             otype = 'index'
         else:
             otype = 'snapshot'
@@ -148,7 +147,7 @@ def config_override(ctx, config_dict):
     '--key', type=str, required=True, help='Node identification tag'
 )
 @click.option(
-    '--value', type=str, required=True, help='Value associated with --key'
+    '--value', type=str, default=None, help='Value associated with --key'
 )
 @click.option(
     '--allocation_type', type=str,
@@ -186,7 +185,7 @@ def allocation_singleton(
     logger.debug('Validating provided options: {0}'.format(raw_options))
     mykwargs = option_schema_check(action, raw_options)
     mykwargs.update(
-        { 'timeout': c_args['timeout'] if c_args['timeout'] else 30 }
+        { 'max_wait': c_args['timeout'] if c_args['timeout'] else 30 }
     )
     logger.debug('Validating provided filters: {0}'.format(filter_list))
     clean_filters = {

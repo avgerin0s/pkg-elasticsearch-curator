@@ -65,6 +65,36 @@ class TestCLIDeleteIndices(CuratorTestCase):
                     ],
                     )
         self.assertEquals(0, len(curator.get_indices(self.client)))
+    def test_delete_in_period(self):
+        # filtertype: {0}
+        # source: {1}
+        # range_from: {2}
+        # range_to: {3}
+        # timestring: {4}
+        # unit: {5}
+        # field: {6}
+        # stats_result: {7}
+        # epoch: {8}
+        # week_starts_on: {9}
+        self.create_indices(10)
+        self.write_config(
+            self.args['configfile'], testvars.client_config.format(host, port))
+        self.write_config(self.args['actionfile'],
+            testvars.delete_period_proto.format(
+                'period', 'name', '-5', '-1', "'%Y.%m.%d'", 'days',
+                ' ', ' ', ' ', 'monday'
+            )
+        )
+        test = clicktest.CliRunner()
+        result = test.invoke(
+                    curator.cli,
+                    [
+                        '--config', self.args['configfile'],
+                        self.args['actionfile']
+                    ],
+                    )
+        self.assertEqual(0, result.exit_code)
+        self.assertEquals(5, len(curator.get_indices(self.client)))
     def test_empty_list(self):
         self.create_indices(10)
         self.write_config(
@@ -119,78 +149,11 @@ class TestCLIDeleteIndices(CuratorTestCase):
                     ],
                     )
         self.assertEqual(-1, result.exit_code)
-
-class TestCLIFixFor687(CuratorTestCase):
-    @unittest.skipIf(curator.get_version(global_client) >= (3, 0, 0),
-                     'not supported for this version of ES')
-    def test_fix_for_687(self):
-        self.create_repository()
-        snap_name = 'test687'
-        # 7 june (week 23)
-        self.client.indices.create(
-            index='logstash-2016.23',
-            body={
-                'settings': {
-                    'creation_date': 1465293737000,
-                    'number_of_shards': 1, 'number_of_replicas': 0
-                }
-            }
-        )
-        # 14 june (week 24)
-        self.client.indices.create(
-            index='logstash-2016.24',
-            body={
-                'settings': {
-                    'creation_date': 1465898537000,
-                    'number_of_shards': 1, 'number_of_replicas': 0
-                }
-            }
-        )
-        # 21 june (week 25)
-        self.client.indices.create(
-            index='logstash-2016.25',
-            body={
-                'settings': {
-                    'creation_date': 1466503337000,
-                    'number_of_shards': 1, 'number_of_replicas': 0
-                }
-            }
-        )
-        # 28 july (week 26)
-        self.client.indices.create(
-            index='logstash-2016.26',
-            body={
-                'settings': {
-                    'creation_date': 1467108137000,
-                    'number_of_shards': 1, 'number_of_replicas': 0
-                }
-            }
-        )
-        # 5 july (week 27)
-        self.client.indices.create(
-            index='logstash-2016.27',
-            body={
-                'settings': {
-                    'creation_date': 1467712937000,
-                    'number_of_shards': 1, 'number_of_replicas': 0
-                }
-            }
-        )
-        # 12 july (week 28)
-        self.client.indices.create(
-            index='logstash-2016.28',
-            body={
-                'settings': {
-                    'creation_date': 1468317737000,
-                    'number_of_shards': 1, 'number_of_replicas': 0
-                }
-            }
-        )
-        self.client.cluster.health(wait_for_status='yellow')
+    def test_945(self):
+        self.create_indices(10)
         self.write_config(
             self.args['configfile'], testvars.client_config.format(host, port))
-        self.write_config(self.args['actionfile'],
-            testvars.test_687.format(self.args['repository'], snap_name))
+        self.write_config(self.args['actionfile'], testvars.test_945)
         test = clicktest.CliRunner()
         result = test.invoke(
                     curator.cli,
@@ -199,7 +162,40 @@ class TestCLIFixFor687(CuratorTestCase):
                         self.args['actionfile']
                     ],
                     )
-        snapshot = curator.get_snapshot(
-                    self.client, self.args['repository'], '_all'
-                   )
-        self.assertEquals(6, len(curator.get_indices(self.client)))
+        self.assertEqual(-1, result.exit_code)
+    def test_name_epoch_zero(self):
+        self.create_index('epoch_zero-1970.01.01')
+        self.write_config(
+            self.args['configfile'], testvars.client_config.format(host, port))
+        self.write_config(self.args['actionfile'],
+            testvars.delete_proto.format(
+                'age', 'name', 'older', '\'%Y.%m.%d\'', 'days', 5, ' ', ' ', ' '
+            )
+        )
+        test = clicktest.CliRunner()
+        result = test.invoke(
+                    curator.cli,
+                    [
+                        '--config', self.args['configfile'],
+                        self.args['actionfile']
+                    ],
+                    )
+        self.assertEquals(0, len(curator.get_indices(self.client)))
+    def test_name_negative_epoch(self):
+        self.create_index('index-1969.12.31')
+        self.write_config(
+            self.args['configfile'], testvars.client_config.format(host, port))
+        self.write_config(self.args['actionfile'],
+            testvars.delete_proto.format(
+                'age', 'name', 'older', '\'%Y.%m.%d\'', 'days', 5, ' ', ' ', ' '
+            )
+        )
+        test = clicktest.CliRunner()
+        result = test.invoke(
+                    curator.cli,
+                    [
+                        '--config', self.args['configfile'],
+                        self.args['actionfile']
+                    ],
+                    )
+        self.assertEquals(0, len(curator.get_indices(self.client)))

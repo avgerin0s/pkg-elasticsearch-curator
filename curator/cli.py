@@ -22,9 +22,12 @@ CLASS_MAP = {
     'delete_indices' : DeleteIndices,
     'delete_snapshots' : DeleteSnapshots,
     'forcemerge' : ForceMerge,
+    'index_settings' : IndexSettings,
     'open' : Open,
+    'reindex' : Reindex,
     'replicas' : Replicas,
     'restore' : Restore,
+    'rollover' : Rollover,
     'snapshot' : Snapshot,
 }
 
@@ -52,11 +55,7 @@ def process_action(client, config, **kwargs):
     if action == 'delete_indices':
         mykwargs['master_timeout'] = (
             kwargs['master_timeout'] if 'master_timeout' in kwargs else 30)
-    if action == 'allocation' or action == 'replicas':
-        # Setting the operation timeout to the client timeout
-        mykwargs['timeout'] = (
-            kwargs['timeout'] if 'timeout' in kwargs else 30)
-
+ 
     ### Update the defaults with whatever came with opts, minus any Nones
     mykwargs.update(prune_nones(opts))
     logger.debug('Action kwargs: {0}'.format(mykwargs))
@@ -70,14 +69,15 @@ def process_action(client, config, **kwargs):
             logger.debug('Adding indices to alias "{0}"'.format(opts['name']))
             adds = IndexList(client)
             adds.iterate_filters(config['add'])
-            action_obj.add(adds)
+            action_obj.add(adds, warn_if_no_indices=opts['warn_if_no_indices'])
         if 'remove' in config:
             logger.debug(
                 'Removing indices from alias "{0}"'.format(opts['name']))
             removes = IndexList(client)
             removes.iterate_filters(config['remove'])
-            action_obj.remove(removes)
-    elif action in [ 'cluster_routing', 'create_index' ]:
+            action_obj.remove(
+                removes, warn_if_no_indices= opts['warn_if_no_indices'])
+    elif action in [ 'cluster_routing', 'create_index', 'rollover']:
         action_obj = action_class(client, **mykwargs)
     elif action == 'delete_snapshots' or action == 'restore':
         logger.debug('Running "{0}"'.format(action))
@@ -122,7 +122,9 @@ def cli(config, dry_run, action_file):
     #########################################
     ### Start working on the actions here ###
     #########################################
+    logger.debug('action_file: {0}'.format(action_file))
     action_config = get_yaml(action_file)
+    logger.debug('action_config: {0}'.format(action_config))
     action_dict = validate_actions(action_config)
     actions = action_dict['actions']
     logger.debug('Full list of actions: {0}'.format(actions))
@@ -150,7 +152,7 @@ def cli(config, dry_run, action_file):
         else:
             logger.info('Preparing Action ID: {0}, "{1}"'.format(idx, action))
         # Override the timeout, if specified, otherwise use the default.
-        if type(timeout_override) == type(int()):
+        if isinstance(timeout_override, int):
             client_args['timeout'] = timeout_override
         else:
             client_args['timeout'] = default_timeout
@@ -160,7 +162,6 @@ def cli(config, dry_run, action_file):
         kwargs['master_timeout'] = (
             client_args['timeout'] if client_args['timeout'] <= 300 else 300)
         kwargs['dry_run'] = dry_run
-        kwargs['timeout'] = client_args['timeout']
 
         # Create a client object for each action...
         client = get_client(**client_args)
@@ -174,8 +175,7 @@ def cli(config, dry_run, action_file):
             )
             process_action(client, actions[idx], **kwargs)
         except Exception as e:
-            if str(type(e)) == "<class 'curator.exceptions.NoIndices'>" or \
-                str(type(e)) == "<class 'curator.exceptions.NoSnapshots'>":
+            if isinstance(e, NoIndices) or isinstance(e, NoSnapshots):
                 if ignore_empty_list:
                     logger.info(
                         'Skipping action "{0}" due to empty list: '

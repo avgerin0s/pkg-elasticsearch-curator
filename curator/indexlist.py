@@ -65,11 +65,11 @@ class IndexList(object):
         self.loggit.debug('Getting all indices')
         self.all_indices = get_indices(self.client)
         self.indices = self.all_indices[:]
-        self.empty_list_check()
-        for index in self.indices:
-            self.__build_index_info(index)
-        self._get_metadata()
-        self._get_index_stats()
+        if self.indices:
+            for index in self.indices:
+                self.__build_index_info(index)
+            self._get_metadata()
+            self._get_index_stats()
 
     def __build_index_info(self, index):
         """
@@ -100,6 +100,7 @@ class IndexList(object):
             'kibana': self.filter_kibana,
             'none': self.filter_none,
             'opened': self.filter_opened,
+            'period': self.filter_period,
             'pattern': self.filter_by_regex,
             'space': self.filter_by_space,
         }
@@ -229,7 +230,7 @@ class IndexList(object):
         ts = TimestringSearch(timestring)
         for index in self.working_list():
             epoch = ts.get_epoch(index)
-            if epoch:
+            if isinstance(epoch, int):
                 self.index_info[index]['age']['name'] = epoch
 
     def _get_field_stats_dates(self, field='@timestamp'):
@@ -401,7 +402,7 @@ class IndexList(object):
             name. Only used for index filtering by ``name``.
         :arg unit: One of ``seconds``, ``minutes``, ``hours``, ``days``,
             ``weeks``, ``months``, or ``years``.
-        :arg unit_count: The number of ``unit``s. ``unit_count`` * ``unit`` will
+        :arg unit_count: The number of ``unit`` (s). ``unit_count`` * ``unit`` will
             be calculated out to the relative number of seconds.
         :arg field: A timestamp field name.  Only used for ``field_stats`` based
             calculations.
@@ -432,11 +433,12 @@ class IndexList(object):
         )
         for index in self.working_list():
             try:
+                age = int(self.index_info[index]['age'][self.age_keyfield])
                 msg = (
                     'Index "{0}" age ({1}), direction: "{2}", point of '
                     'reference, ({3})'.format(
                         index,
-                        int(self.index_info[index]['age'][self.age_keyfield]),
+                        age,
                         direction,
                         PoR
                     )
@@ -444,9 +446,9 @@ class IndexList(object):
                 # Because time adds to epoch, smaller numbers are actually older
                 # timestamps.
                 if direction == 'older':
-                    agetest = self.index_info[index]['age'][self.age_keyfield] < PoR
+                    agetest = age < PoR
                 else:
-                    agetest = self.index_info[index]['age'][self.age_keyfield] > PoR
+                    agetest = age > PoR
                 self.__excludify(agetest, exclude, index, msg)
             except KeyError:
                 self.loggit.debug(
@@ -679,7 +681,22 @@ class IndexList(object):
 
     def filter_by_alias(self, aliases=None, exclude=False):
         """
-        Match indices which are associated with the alias identified by `name`
+        Match indices which are associated with the alias or list of aliases 
+        identified by `aliases`.
+
+        An update to Elasticsearch 5.5.0 changes the behavior of this from 
+        previous 5.x versions:
+        https://www.elastic.co/guide/en/elasticsearch/reference/5.5/breaking-changes-5.5.html#breaking_55_rest_changes
+
+        What this means is that indices must appear in all aliases in list
+        `aliases` or a 404 error will result, leading to no indices being 
+        matched.  In older versions, if the index was associated with even one 
+        of the aliases in `aliases`, it would result in a match.
+
+        It is unknown if this behavior affects anyone.  At the time this was 
+        written, no users have been bit by this.  The code could be adapted
+        to manually loop if the previous behavior is desired.  But if no users
+        complain, this will become the accepted/expected behavior.
 
         :arg aliases: A list of alias names.
         :type aliases: list
@@ -768,7 +785,7 @@ class IndexList(object):
         working_list = self.working_list()
 
         if use_age:
-            if source is not 'name':
+            if source != 'name':
                 self.loggit.warn(
                     'Cannot get age information from closed indices unless '
                     'source="name".  Omitting any closed indices.'
@@ -795,6 +812,73 @@ class IndexList(object):
             condition = True if idx <= count else False
             self.__excludify(condition, exclude, index, msg)
             idx += 1
+
+    def filter_period(
+        self, source='name', range_from=None, range_to=None, timestring=None,
+        unit=None, field=None, stats_result='min_value', 
+        week_starts_on='sunday', epoch=None, exclude=False,
+        ):
+        """
+        Match `indices` within ages within a given period.
+
+        :arg source: Source of index age. Can be one of 'name', 'creation_date',
+            or 'field_stats'
+        :arg range_from: How many ``unit`` (s) in the past/future is the origin?
+        :arg range_to: How many ``unit`` (s) in the past/future is the end point?
+        :arg timestring: An strftime string to match the datestamp in an index
+            name. Only used for index filtering by ``name``.
+        :arg unit: One of ``hours``, ``days``, ``weeks``, ``months``, or 
+            ``years``.
+        :arg unit_count: The number of ``unit`` (s). ``unit_count`` * ``unit`` will
+            be calculated out to the relative number of seconds.
+        :arg field: A timestamp field name.  Only used for ``field_stats`` based
+            calculations.
+        :arg stats_result: Either `min_value` or `max_value`.  Only used in
+            conjunction with `source`=``field_stats`` to choose whether to
+            reference the minimum or maximum result value.
+        :arg week_starts_on: Either ``sunday`` or ``monday``. Default is 
+            ``sunday``
+        :arg epoch: An epoch timestamp used to establish a point of reference 
+            for calculations. If not provided, the current time will be used.
+        :arg exclude: If `exclude` is `True`, this filter will remove matching
+            indices from `indices`. If `exclude` is `False`, then only matching
+            indices will be kept in `indices`.
+            Default is `False`
+        """
+
+        self.loggit.debug('Filtering indices by age')
+        try:
+            start, end = date_range(
+                unit, range_from, range_to, epoch, week_starts_on=week_starts_on
+            )
+        except Exception as e:
+            report_failure(e)
+
+        self._calculate_ages(
+            source=source, timestring=timestring, field=field,
+            stats_result=stats_result
+        )
+        for index in self.working_list():
+            try:
+                age = int(self.index_info[index]['age'][self.age_keyfield])
+                msg = (
+                    'Index "{0}" age ({1}), period start: "{2}", period '
+                    'end, "{3}"'.format(
+                        index,
+                        age,
+                        start,
+                        end
+                    )
+                )
+                # Because time adds to epoch, smaller numbers are actually older
+                # timestamps.
+                inrange = ((age >= start) and (age <= end))
+                self.__excludify(inrange, exclude, index, msg)
+            except KeyError:
+                self.loggit.debug(
+                    'Index "{0}" does not meet provided criteria. '
+                    'Removing from list.'.format(index, source))
+                self.indices.remove(index)
 
     def iterate_filters(self, filter_dict):
         """
