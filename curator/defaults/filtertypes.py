@@ -1,5 +1,5 @@
 from voluptuous import *
-from ..defaults import settings
+from . import settings
 from . import filter_elements
 import logging
 logger = logging.getLogger(__name__)
@@ -52,6 +52,7 @@ def age(action, config):
         filter_elements.exclude(),
     ]
     retval += _age_elements(action, config)
+    logger.debug('AGE FILTER = {0}'.format(retval))
     return retval
 
 def allocated(action, config):
@@ -96,6 +97,18 @@ def pattern(action, config):
         filter_elements.value(),
         filter_elements.exclude(),
     ]
+
+def period(action, config):
+    retval = [
+        filter_elements.unit(period=True),
+        filter_elements.range_from(),
+        filter_elements.range_to(),
+        filter_elements.week_starts_on(),
+        filter_elements.epoch(),
+        filter_elements.exclude(),
+    ]
+    retval += _age_elements(action, config)
+    return retval
 
 def space(action, config):
     retval = [

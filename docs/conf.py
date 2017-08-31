@@ -47,8 +47,8 @@ sys.path.insert(0, os.path.abspath('../'))
 extensions = ['sphinx.ext.autodoc', 'sphinx.ext.doctest', 'sphinx.ext.intersphinx']
 
 intersphinx_mapping = {
-	'python': ('https://docs.python.org/3.5', None),
-	'elasticsearch': ('http://elasticsearch-py.readthedocs.io/en/2.3.0', None),
+	'python': ('https://docs.python.org/3.6', None),
+	'elasticsearch': ('http://elasticsearch-py.readthedocs.io/en/5.4.0', None),
 }
 
 autoclass_content = "both"
@@ -67,7 +67,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Elasticsearch Curator'
-copyright = u'2011-2016, Elasticsearch'
+copyright = u'2011-2017, Elasticsearch'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the

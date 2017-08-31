@@ -75,6 +75,44 @@ def test_client_options(config):
         if 'client_key' in config and  config['client_key']:
             read_file(config['client_key'])
 
+def rollable_alias(client, alias):
+    """
+    Ensure that `alias` is an alias, and points to an index that can use the
+    _rollover API.
+
+    :arg client: An :class:`elasticsearch.Elasticsearch` client object
+    :arg alias: An Elasticsearch alias
+    """
+    try:
+        response = client.indices.get_alias(name=alias)
+    except elasticsearch.NotFoundError as e:
+        logger.error('alias "{0}" not found.'.format(alias))
+        return False
+    # Response should be like:
+    # {'there_should_be_only_one': {u'aliases': {'value of "alias" here': {}}}}
+    # Where 'there_should_be_only_one' is a single index name that ends in a
+    # number, and 'value of "alias" here' reflects the value of the passed
+    # parameter.
+    if len(response) > 1:
+        logger.error(
+            '"alias" must only reference one index: {0}'.format(response))
+    # elif len(response) < 1:
+    #     logger.error(
+    #         '"alias" must reference at least one index: {0}'.format(response))
+    else:
+        index = list(response.keys())[0]
+        rollable = False
+        # In order for `rollable` to be True, the last 2 digits of the index
+        # must be digits, or a hyphen followed by a digit.
+        # NOTE: This is not a guarantee that the rest of the index name is
+        # necessarily correctly formatted.
+        if index[-2:][1].isdigit():
+            if index[-2:][0].isdigit():
+                rollable = True
+            elif index[-2:][0] == '-':
+                rollable = True
+        return rollable
+
 def verify_client_object(test):
     """
     Test if `test` is a proper :class:`elasticsearch.Elasticsearch` client
@@ -87,7 +125,7 @@ def verify_client_object(test):
     if str(type(test)) == "<class 'mock.Mock'>" or \
         str(type(test)) == "<class 'mock.mock.Mock'>":
         pass
-    elif not type(test) == type(elasticsearch.Elasticsearch()):
+    elif not isinstance(test, elasticsearch.Elasticsearch):
         raise TypeError(
             'Not a client object. Type: {0}'.format(type(test))
         )
@@ -100,7 +138,9 @@ def verify_index_list(test):
     :arg test: The variable or object to test
     :rtype: None
     """
-    if not str(type(test)) == "<class 'curator.indexlist.IndexList'>":
+    # It breaks if this import isn't local to this function
+    from .indexlist import IndexList
+    if not isinstance(test, IndexList):
         raise TypeError(
             'Not an IndexList object. Type: {0}.'.format(type(test))
         )
@@ -113,7 +153,9 @@ def verify_snapshot_list(test):
     :arg test: The variable or object to test
     :rtype: None
     """
-    if not str(type(test)) == "<class 'curator.snapshotlist.SnapshotList'>":
+    # It breaks if this import isn't local to this function
+    from .snapshotlist import SnapshotList
+    if not isinstance(test, SnapshotList):    
         raise TypeError(
             'Not an SnapshotList object. Type: {0}.'.format(type(test))
         )
@@ -164,17 +206,26 @@ def get_datetime(index_timestamp, timestring):
     """
     # Compensate for week of year by appending '%w' to the timestring
     # and '1' (Monday) to index_timestamp
-    if '%W' in timestring:
+    iso_week_number = False
+    if '%W' in timestring or '%U' in timestring or '%V' in timestring:
         timestring += '%w'
         index_timestamp += '1'
-    elif '%U' in timestring:
-        timestring += '%w'
-        index_timestamp += '1'
+        if '%V' in timestring and '%G' in timestring:
+            iso_week_number = True
+            # Fake as so we read Greg format instead. We will process it later
+            timestring = timestring.replace("%G", "%Y").replace("%V", "%W")
     elif '%m' in timestring:
         if not '%d' in timestring:
             timestring += '%d'
             index_timestamp += '1'
-    return datetime.strptime(index_timestamp, timestring)
+
+    date = datetime.strptime(index_timestamp, timestring)
+
+    # Handle ISO time string
+    if iso_week_number:
+        date = _handle_iso_week_number(date, timestring, index_timestamp)
+
+    return date
 
 def fix_epoch(epoch):
     """
@@ -203,6 +254,30 @@ def fix_epoch(epoch):
         epoch = int(epoch/powers_of_ten)
     return epoch
 
+def _handle_iso_week_number(date, timestring, index_timestamp):
+    date_iso = date.isocalendar()
+    iso_week_str = "{Y:04d}{W:02d}".format(Y=date_iso[0], W=date_iso[1])
+    greg_week_str = datetime.strftime(date, "%Y%W")
+
+    # Edge case 1: ISO week number is bigger than Greg week number.
+    # Ex: year 2014, all ISO week numbers were 1 more than in Greg.
+    if (iso_week_str > greg_week_str or
+        # Edge case 2: 2010-01-01 in ISO: 2009.W53, in Greg: 2010.W00
+        # For Greg converting 2009.W53 gives 2010-01-04, converting back
+        # to same timestring gives: 2010.W01.
+            datetime.strftime(date, timestring) != index_timestamp):
+
+        # Remove one week in this case
+        date = date - timedelta(days=7)
+    return date
+
+def datetime_to_epoch(mydate):
+   # I would have used `total_seconds`, but apparently that's new
+   # to Python 2.7+, and due to so many people still using
+   # RHEL/CentOS 6, I need this to support Python 2.6.
+   tdelta = (mydate - datetime(1970,1,1))
+   return tdelta.seconds + tdelta.days * 24 * 3600
+
 class TimestringSearch(object):
     """
     An object to allow repetitive search against a string, `searchme`, without
@@ -223,19 +298,21 @@ class TimestringSearch(object):
             `timestring`
         :rtype: int
         """
-
         match = self.pattern.search(searchme)
         if match:
             if match.group("date"):
                 timestamp = match.group("date")
-                # I would have used `total_seconds`, but apparently that's new
-                # to Python 2.7+, and due to so many people still using
-                # RHEL/CentOS 6, I need this to support Python 2.6.
-                tdelta = (
-                    get_datetime(timestamp, self.timestring) -
-                    datetime(1970,1,1)
+                return datetime_to_epoch(
+                    get_datetime(timestamp, self.timestring)
                 )
-                return tdelta.seconds + tdelta.days * 24 * 3600
+                # # I would have used `total_seconds`, but apparently that's new
+                # # to Python 2.7+, and due to so many people still using
+                # # RHEL/CentOS 6, I need this to support Python 2.6.
+                # tdelta = (
+                #     get_datetime(timestamp, self.timestring) -
+                #     datetime(1970,1,1)
+                # )
+                # return tdelta.seconds + tdelta.days * 24 * 3600
 
 def get_point_of_reference(unit, count, epoch=None):
     """
@@ -271,6 +348,110 @@ def get_point_of_reference(unit, count, epoch=None):
         epoch = time.time()
     epoch = fix_epoch(epoch)
     return epoch - multiplier * count
+   
+def date_range(unit, range_from, range_to, epoch=None, week_starts_on='sunday'):
+    """
+    Get the epoch start time and end time of a range of ``unit``s, reckoning the 
+    start of the week (if that's the selected unit) based on ``week_starts_on``, 
+    which can be either ``sunday`` or ``monday``.
+
+    :arg unit: One of ``hours``, ``days``, ``weeks``, ``months``, or ``years``.
+    :arg range_from: How many ``unit`` (s) in the past/future is the origin?
+    :arg range_to: How many ``unit`` (s) in the past/future is the end point?
+    :arg epoch: An epoch timestamp used to establish a point of reference for 
+        calculations.
+    :arg week_starts_on: Either ``sunday`` or ``monday``. Default is ``sunday``
+    :rtype: tuple
+    """
+    acceptable_units = ['hours', 'days', 'weeks', 'months', 'years']
+    if unit not in acceptable_units:
+        raise ConfigurationError(
+            '"unit" must be one of: {0}'.format(acceptable_units))
+    if not range_to >= range_from:
+        raise ConfigurationError(
+            '"range_to" must be greater than or equal to "range_from"')
+    if not epoch:
+        epoch = time.time()
+    epoch = fix_epoch(epoch)
+    rawPoR = datetime.utcfromtimestamp(epoch)
+    logger.debug('Raw point of Reference = {0}'.format(rawPoR))
+    # Reverse the polarity, because -1 as last week makes sense when read by
+    # humans, but datetime timedelta math makes -1 in the future.
+    origin = range_from * -1
+    # These if statements help get the start date or start_delta 
+    if unit == 'hours':
+        PoR = datetime(rawPoR.year, rawPoR.month, rawPoR.day, rawPoR.hour, 0, 0)
+        start_delta = timedelta(hours=origin)
+    if unit == 'days':
+        PoR = datetime(rawPoR.year, rawPoR.month, rawPoR.day, 0, 0, 0)
+        start_delta = timedelta(days=origin)
+    if unit == 'weeks':
+        PoR = datetime(rawPoR.year, rawPoR.month, rawPoR.day, 0, 0, 0)
+        sunday = False
+        if week_starts_on.lower() == 'sunday':
+            sunday = True
+        weekday = PoR.weekday()
+        # Compensate for ISO week starting on Monday by default
+        if sunday:
+            weekday += 1
+        logger.debug('Weekday = {0}'.format(weekday))
+        start_delta = timedelta(days=weekday, weeks=origin)
+    if unit == 'months':
+        PoR = datetime(rawPoR.year, rawPoR.month, 1, 0, 0, 0)
+        year = rawPoR.year
+        month = rawPoR.month
+        if origin > 0:
+            for m in range(0, origin):
+                if month == 1:
+                    year -= 1
+                    month = 12
+                else:
+                    month -= 1
+        else:
+            for m in range(origin, 0):
+                if month == 12:
+                    year += 1
+                    month = 1
+                else:
+                    month += 1         
+        start_date = datetime(year, month, 1, 0, 0, 0)
+    if unit == 'years':
+        PoR = datetime(rawPoR.year, 1, 1, 0, 0, 0)
+        start_date = datetime(rawPoR.year - origin, 1, 1, 0, 0, 0)
+    if unit not in ['months','years']:
+        start_date = PoR - start_delta
+    # By this point, we know our start date and can convert it to epoch time
+    start_epoch = datetime_to_epoch(start_date)
+    logger.debug('Start ISO8601 = {0}'.format(
+        datetime.utcfromtimestamp(start_epoch).isoformat()))
+    # This is the number of units we need to consider.
+    count = (range_to - range_from) + 1
+    # We have to iterate to one more month, and then subtract a second to get 
+    # the last day of the correct month
+    if unit == 'months':
+        month = start_date.month
+        year = start_date.year
+        for m in range(0, count):
+            if month == 12:
+                year += 1
+                month = 1
+            else:
+                month += 1
+        end_date = datetime(year, month, 1, 0, 0, 0)
+        end_epoch = datetime_to_epoch(end_date) - 1
+    # Similarly, with years, we need to get the last moment of the year
+    elif unit == 'years':
+        end_date = datetime((rawPoR.year - origin) + count, 1, 1, 0, 0, 0)
+        end_epoch = datetime_to_epoch(end_date) - 1
+    # It's not months or years, which have inconsistent reckoning...
+    else:
+        # This lets us use an existing method to simply add unit * count seconds
+        # to get hours, days, or weeks, as they don't change
+        end_epoch = get_point_of_reference(
+            unit, count * -1, epoch=start_epoch) -1
+    logger.debug('End ISO8601 = {0}'.format(
+        datetime.utcfromtimestamp(end_epoch).isoformat()))
+    return (start_epoch, end_epoch)
 
 def byte_size(num, suffix='B'):
     """
@@ -294,7 +475,7 @@ def ensure_list(indices):
     :arg indices: A list of indices to act upon
     :rtype: list
     """
-    if type(indices) is not type(list()):   # in case of a single value passed
+    if not isinstance(indices, list): # in case of a single value passed
         indices = [indices]
     return indices
 
@@ -321,14 +502,14 @@ def check_csv(value):
     :arg value: The value to test, if list or csv string
     :rtype: bool
     """
-    if type(value) is type(list()):
+    if isinstance(value, list):
         return True
     string = False
     # Python3 hack because it doesn't recognize unicode as a type anymore
     if sys.version_info < (3, 0):
-        if type(value) is type(unicode()):
+        if isinstance(value, unicode):
             value = str(value)
-    if type(value) is type(str()):
+    if isinstance(value, str):
         if len(value.split(',')) > 1: # It's a csv string.
             return True
         else: # There's only one value here, so it's not a csv string
@@ -379,19 +560,6 @@ def get_indices(client):
             'Detected Elasticsearch version '
             '{0}'.format(".".join(map(str,version_number)))
         )
-        # This hack ONLY works if you're using 2.4.2 or higher, but is unneeded
-        # if you are using 5.0 or higher.  See issue #826
-        if version_number >= (2, 4, 2) \
-            and version_number < (5, 0, 0):
-            logger.debug('Using Elasticsearch >= 2.4.2 < 5.0.0')
-            if client.indices.exists(index='.security'):
-                logger.debug(
-                    'Found the ".security" index.  '
-                    'Adding to list of all indices'
-                )
-                # Double check to see if it's there before appending
-                if not '.security' in indices:
-                    indices.append('.security')
         logger.debug("All indices: {0}".format(indices))
         return indices
     except Exception as e:
@@ -439,6 +607,11 @@ def check_version(client):
     )
     if version_number >= settings.version_max() \
         or version_number < settings.version_min():
+        logger.error(
+            'Elasticsearch version {0} incompatible '
+            'with this version of Curator '
+            '({0})'.format(".".join(map(str,version_number)), __version__)
+        )
         raise CuratorException(
             'Elasticsearch version {0} incompatible '
             'with this version of Curator '
@@ -505,6 +678,8 @@ def get_client(**kwargs):
         not work if `hosts` has more than one value.**  It will raise an
         Exception in that case.
     :type master_only: bool
+    :arg skip_version_test: If `True`, skip the version check as part of the 
+        client connection.
     :rtype: :class:`elasticsearch.Elasticsearch`
     """
     if 'url_prefix' in kwargs:
@@ -522,6 +697,10 @@ def get_client(**kwargs):
     kwargs['hosts'] = '127.0.0.1' if not 'hosts' in kwargs else kwargs['hosts']
     kwargs['master_only'] = False if not 'master_only' in kwargs \
         else kwargs['master_only']
+    if 'skip_version_test' in kwargs:
+        skip_version_test = kwargs.pop('skip_version_test')
+    else:
+        skip_version_test = False
     kwargs['use_ssl'] = False if not 'use_ssl' in kwargs else kwargs['use_ssl']
     kwargs['ssl_no_validate'] = False if not 'ssl_no_validate' in kwargs \
         else kwargs['ssl_no_validate']
@@ -592,8 +771,14 @@ def get_client(**kwargs):
             )
     try:
         client = elasticsearch.Elasticsearch(**kwargs)
-        # Verify the version is acceptable.
-        check_version(client)
+        if skip_version_test:
+            logger.warn(
+                'Skipping Elasticsearch version verification. This is '
+                'acceptable for remote reindex operations.'
+            )
+        else:
+            # Verify the version is acceptable.
+            check_version(client)
         # Verify "master_only" status, if applicable
         check_master(client, master_only=master_only)
         return client
@@ -602,28 +787,6 @@ def get_client(**kwargs):
             'Unable to create client connection to Elasticsearch.  '
             'Error: {0}'.format(e)
         )
-
-def override_timeout(timeout, action):
-    """
-    Override the default timeout for `forcemerge`, `snapshot`, and `sync_flush`
-    operations if the default value of ``30`` is provided.
-
-    :arg timeout: Number of seconds before the client will timeout.
-    :arg action: The `action` to be performed.
-    """
-    retval = timeout
-    if action in ['forcemerge', 'snapshot', 'sync_flush']:
-        # Check for default timeout of 30s
-        if timeout == 30:
-            if action in ['forcemerge', 'snapshot']:
-                retval = 21600
-            elif action == 'sync_flush':
-                retval = 180
-            logger.debug(
-                'Overriding default connection timeout for {0} action.  '
-                'New timeout: {1}'.format(action.upper(),timeout)
-            )
-    return retval
 
 def show_dry_run(ilo, action, **kwargs):
     """
@@ -658,9 +821,13 @@ def get_repository(client, repository=''):
     """
     try:
         return client.snapshot.get_repository(repository=repository)
-    except (elasticsearch.TransportError, elasticsearch.NotFoundError):
-        logger.error("Repository {0} not found.".format(repository))
-        return False
+    except (elasticsearch.TransportError, elasticsearch.NotFoundError) as e:
+        raise CuratorException(
+            'Unable to get repository {0}.  Response Code: {1}.  Error: {2}.'
+            'Check Elasticsearch logs for more information.'.format(
+                repository, e.status_code, e.error
+            )
+        )        
 
 def get_snapshot(client, repository=None, snapshot=''):
     """
@@ -730,6 +897,24 @@ def snapshot_in_progress(client, repository=None, snapshot=None):
                 'More than 1 snapshot in progress: {0}'.format(inprogress)
             )
 
+def find_snapshot_tasks(client):
+    """
+    Check if there is snapshot activity in the Tasks API.
+    Return `True` if activity is found, or `False`
+
+    :arg client: An :class:`elasticsearch.Elasticsearch` client object
+    :rtype: bool
+    """
+    retval = False
+    tasklist = client.tasks.get()
+    for node in tasklist['nodes']:
+        for task in tasklist['nodes'][node]['tasks']:
+            activity = tasklist['nodes'][node]['tasks'][task]['action']
+            if 'snapshot' in activity:
+                logger.debug('Snapshot activity detected: {0}'.format(activity))
+                retval = True
+    return retval
+
 def safe_to_snap(client, repository=None, retry_interval=120, retry_count=3):
     """
     Ensure there are no snapshots in progress.  Pause and retry accordingly
@@ -747,19 +932,20 @@ def safe_to_snap(client, repository=None, retry_interval=120, retry_count=3):
         in_progress = snapshot_in_progress(
             client, repository=repository
         )
-        if in_progress:
+        ongoing_task = find_snapshot_tasks(client)
+        if in_progress or ongoing_task:
+            if in_progress:
+                logger.info(
+                    'Snapshot already in progress: {0}'.format(in_progress))
+            elif ongoing_task:
+                logger.info('Snapshot activity detected in Tasks API')
             logger.info(
-                'Snapshot already in progress: {0}'.format(in_progress))
-            logger.info(
-                'Pausing {0} seconds before retrying...'.format(
-                    retry_interval)
-            )
+                'Pausing {0} seconds before retrying...'.format(retry_interval))
             time.sleep(retry_interval)
             logger.info('Retry {0} of {1}'.format(count, retry_count))
         else:
             return True
     return False
-
 
 def create_snapshot_body(indices, ignore_unavailable=False,
                          include_global_state=True, partial=False):
@@ -863,6 +1049,7 @@ def create_repository(client, **kwargs):
 
     :arg client: An :class:`elasticsearch.Elasticsearch` client object
 
+    :arg repository: The Elasticsearch snapshot repository to use
     :arg repo_type: The type of repository (presently only `fs` and `s3`)
     :arg compress: Turn on compression of the snapshot files. Compression is
         applied only to metadata files (index mapping and settings). Data files
@@ -891,7 +1078,7 @@ def create_repository(client, **kwargs):
     :rtype: bool
     """
     if not 'repository' in kwargs:
-        raise MissingArgument('Missing required parameter --repository')
+        raise MissingArgument('Missing required parameter "repository"')
     else:
         repository = kwargs['repository']
 
@@ -900,16 +1087,9 @@ def create_repository(client, **kwargs):
         logger.debug(
             'Checking if repository {0} already exists...'.format(repository)
         )
-        result = get_repository(client, repository=repository)
+        result = repository_exists(client, repository=repository)
         logger.debug("Result = {0}".format(result))
         if not result:
-            logger.debug(
-                'Repository {0} not in Elasticsearch. Continuing...'.format(
-                    repository
-                )
-            )
-            client.snapshot.create_repository(repository=repository, body=body)
-        elif result is not None and repository not in result:
             logger.debug(
                 'Repository {0} not in Elasticsearch. Continuing...'.format(
                     repository
@@ -943,12 +1123,19 @@ def repository_exists(client, repository=None):
     """
     if not repository:
         raise MissingArgument('No value for "repository" provided')
-    test_result = get_repository(client, repository)
-    if repository in test_result:
-        logger.debug("Repository {0} exists.".format(repository))
-        return True
-    else:
-        logger.debug("Repository {0} not found...".format(repository))
+    try:
+        test_result = get_repository(client, repository)
+        if repository in test_result:
+            logger.debug("Repository {0} exists.".format(repository))
+            return True
+        else:
+            logger.debug("Repository {0} not found...".format(repository))
+            return False
+    except Exception as e:
+        logger.debug(
+            'Unable to find repository "{0}": Error: '
+            '{1}'.format(repository, e)
+        )
         return False
 
 def test_repo_fs(client, repository=None):
@@ -1002,7 +1189,9 @@ def parse_date_pattern(name):
     """
     Scan and parse `name` for :py:func:`time.strftime` strings, replacing them
     with the associated value when found, but otherwise returning lowercase
-    values, as uppercase snapshot names are not allowed.
+    values, as uppercase snapshot names are not allowed. It will detect if the
+    first character is a `<`, which would indicate `name` is going to be using
+    Elasticsearch date math syntax, and skip accordingly.
 
     The :py:func:`time.strftime` identifiers that Curator currently recognizes
     as acceptable include:
@@ -1023,6 +1212,10 @@ def parse_date_pattern(name):
     prev = ''; curr = ''; rendered = ''
     for s in range(0, len(name)):
         curr = name[s]
+        if curr == '<':
+            logger.info('"{0}" is using Elasticsearch date math.'.format(name))
+            rendered = name
+            break
         if curr == '%':
             pass
         elif curr in settings.date_regex() and prev == '%':
@@ -1140,7 +1333,7 @@ def validate_actions(data):
                     )
             # Add/Remove here
             clean_config[action_id].update(add_remove)
-        elif current_action in [ 'cluster_routing', 'create_index' ]:
+        elif current_action in ['cluster_routing', 'create_index', 'rollover']:
             # neither cluster_routing nor create_index should have filters
             pass
         else: # Filters key only appears in non-alias actions
@@ -1152,6 +1345,290 @@ def validate_actions(data):
             ).result()
             clean_filters = validate_filters(current_action, valid_filters)
             clean_config[action_id].update({'filters' : clean_filters})
-
+        # This is a special case for remote reindex
+        if current_action == 'reindex':
+            # Check only if populated with something.
+            if 'remote_filters' in valid_structure['options']:
+                valid_filters = SchemaCheck(
+                    valid_structure['options']['remote_filters'],
+                    Schema(filters.Filters(current_action, location=loc)),
+                    'filters',
+                    '{0}, "filters"'.format(loc)
+                ).result()
+                clean_remote_filters = validate_filters(
+                    current_action, valid_filters)
+                clean_config[action_id]['options'].update(
+                    { 'remote_filters' : clean_remote_filters }
+                )
+                
     # if we've gotten this far without any Exceptions raised, it's valid!
     return { 'actions' : clean_config }
+
+def health_check(client, **kwargs):
+    """
+    This function calls client.cluster.health and, based on the args provided,
+    will return `True` or `False` depending on whether that particular keyword 
+    appears in the output, and has the expected value.
+    If multiple keys are provided, all must match for a `True` response. 
+
+    :arg client: An :class:`elasticsearch.Elasticsearch` client object
+    """
+    logger.debug('KWARGS= "{0}"'.format(kwargs))
+    klist = list(kwargs.keys())
+    if len(klist) < 1:
+        raise MissingArgument('Must provide at least one keyword argument')
+    hc_data = client.cluster.health()
+    response = True
+    
+    for k in klist:
+        # First, verify that all kwargs are in the list
+        if not k in list(hc_data.keys()):
+            raise ConfigurationError('Key "{0}" not in cluster health output')
+        if not hc_data[k] == kwargs[k]:
+            logger.debug(
+                'NO MATCH: Value for key "{0}", health check data: '
+                '{1}'.format(kwargs[k], hc_data[k])
+            )
+            response = False
+        else:
+            logger.debug(
+                'MATCH: Value for key "{0}", health check data: '
+                '{1}'.format(kwargs[k], hc_data[k])
+            )
+    if response:
+        logger.info('Health Check for all provided keys passed.')   
+    return response
+
+def snapshot_check(client, snapshot=None, repository=None):
+    """
+    This function calls `client.snapshot.get` and tests to see whether the 
+    snapshot is complete, and if so, with what status.  It will log errors
+    according to the result. If the snapshot is still `IN_PROGRESS`, it will 
+    return `False`.  `SUCCESS` will be an `INFO` level message, `PARTIAL` nets
+    a `WARNING` message, `FAILED` is an `ERROR`, message, and all others will be
+    a `WARNING` level message.
+
+    :arg client: An :class:`elasticsearch.Elasticsearch` client object
+    :arg snapshot: The name of the snapshot.
+    :arg repository: The Elasticsearch snapshot repository to use
+    """
+    try:
+        state = client.snapshot.get(
+            repository=repository, snapshot=snapshot)['snapshots'][0]['state']
+    except Exception as e:
+        raise CuratorException(
+            'Unable to obtain information for snapshot "{0}" in repository '
+            '"{1}". Error: {2}'.format(snapshot, repository, e)
+        )
+    logger.debug('Snapshot state = {0}'.format(state))
+    if state == 'IN_PROGRESS':
+        logger.info('Snapshot {0} still in progress.'.format(snapshot))
+        return False
+    elif state == 'SUCCESS':
+        logger.info(
+            'Snapshot {0} successfully completed.'.format(snapshot))
+    elif state == 'PARTIAL':
+        logger.warn(
+            'Snapshot {0} completed with state PARTIAL.'.format(snapshot))
+    elif state == 'FAILED':
+        logger.error(
+            'Snapshot {0} completed with state FAILED.'.format(snapshot))
+    else:
+        logger.warn(
+            'Snapshot {0} completed with state: {0}'.format(snapshot))
+    return True
+
+
+def restore_check(client, index_list):
+    """
+    This function calls client.indices.recovery with the list of indices to 
+    check for complete recovery.  It will return `True` if recovery of those 
+    indices is complete, and `False` otherwise.  It is designed to fail fast:
+    if a single shard is encountered that is still recovering (not in `DONE`
+    stage), it will immediately return `False`, rather than complete iterating
+    over the rest of the response.
+
+    :arg client: An :class:`elasticsearch.Elasticsearch` client object 
+    :arg index_list: The list of indices to verify having been restored.
+    """
+    try:
+        response = client.indices.recovery(index=to_csv(index_list), human=True)
+    except Exception as e:
+        raise CuratorException(
+            'Unable to obtain recovery information for specified indices. '
+            'Error: {0}'.format(e)
+        )
+    # This should address #962, where perhaps the cluster state hasn't yet
+    # had a chance to add a _recovery state yet, so it comes back empty.
+    if response == {}:
+        logger.info('_recovery returned an empty response. Trying again.')
+        return False
+    # Fixes added in #989
+    logger.info('Provided indices: {0}'.format(index_list))
+    logger.info('Found indices: {0}'.format(list(response.keys())))
+    for index in response:
+        for shard in range(0, len(response[index]['shards'])):
+            # Apparently `is not` is not always `!=`.  Unsure why, will
+            # research later.  Using != fixes #966
+            if response[index]['shards'][shard]['stage'] != 'DONE':
+                logger.info(
+                    'Index "{0}" is still in stage "{1}"'.format(
+                        index, response[index]['shards'][shard]['stage']
+                    )
+                )
+                return False
+    # If we've gotten here, all of the indices have recovered
+    return True
+
+
+def task_check(client, task_id=None):
+    """
+    This function calls client.tasks.get with the provided `task_id`.  If the
+    task data contains ``'completed': True``, then it will return `True` 
+    If the task is not completed, it will log some information about the task
+    and return `False`
+
+    :arg client: An :class:`elasticsearch.Elasticsearch` client object    
+    :arg task_id: A task_id which ostensibly matches a task searchable in the
+        tasks API.
+    """
+    try:
+        task_data = client.tasks.get(task_id=task_id)
+    except Exception as e:
+        raise CuratorException(
+            'Unable to obtain task information for task_id "{0}". Exception '
+            '{1}'.format(task_id, e)
+        )
+    task = task_data['task']
+    completed = task_data['completed']
+    running_time = 0.000000001 * task['running_time_in_nanos']
+    logger.debug('running_time_in_nanos = {0}'.format(running_time))
+    descr = task['description']
+
+    if completed:
+        completion_time = ((running_time * 1000) + task['start_time_in_millis'])
+        time_string = time.strftime(
+            '%Y-%m-%dT%H:%M:%SZ', time.localtime(completion_time/1000)
+        )
+        logger.info('Task "{0}" completed at {1}.'.format(descr, time_string))
+        return True
+    else:
+        # Log the task status here.
+        logger.debug('Full Task Data: {0}'.format(task_data))
+        logger.info(
+            'Task "{0}" with task_id "{1}" has been running for '
+            '{2} seconds'.format(descr, task_id, running_time))
+        return False
+
+
+def wait_for_it(
+        client, action, task_id=None, snapshot=None, repository=None,
+        index_list=None, wait_interval=9, max_wait=-1
+    ):
+    """
+    This function becomes one place to do all wait_for_completion type behaviors
+
+    :arg client: An :class:`elasticsearch.Elasticsearch` client object
+    :arg action: The action name that will identify how to wait
+    :arg task_id: If the action provided a task_id, this is where it must be
+        declared.
+    :arg snapshot: The name of the snapshot.
+    :arg repository: The Elasticsearch snapshot repository to use
+    :arg wait_interval: How frequently the specified "wait" behavior will be
+        polled to check for completion.
+    :arg max_wait: Number of seconds will the "wait" behavior persist 
+        before giving up and raising an Exception.  The default is -1, meaning
+        it will try forever.
+    """
+    action_map = {
+        'allocation':{
+            'function': health_check,
+            'args': {'relocating_shards':0},
+        },
+        'replicas':{
+            'function': health_check,
+            'args': {'status':'green'},
+        },
+        'cluster_routing':{
+            'function': health_check,
+            'args': {'relocating_shards':0},
+        },
+        'snapshot':{
+            'function':snapshot_check,
+            'args':{'snapshot':snapshot, 'repository':repository},
+        },
+        'restore':{
+            'function':restore_check,
+            'args':{'index_list':index_list},
+        },
+        'reindex':{
+            'function':task_check,
+            'args':{'task_id':task_id},
+        },
+    }
+    wait_actions = list(action_map.keys())
+
+    if action not in wait_actions:
+        raise ConfigurationError(
+            '"action" must be one of {0}'.format(wait_actions)
+        )
+    if action == 'reindex' and task_id == None:
+        raise MissingArgument(
+            'A task_id must accompany "action" {0}'.format(action)
+        )
+    if action == 'snapshot' and ((snapshot == None) or (repository == None)):
+        raise MissingArgument(
+            'A snapshot and repository must accompany "action" {0}. snapshot: '
+            '{1}, repository: {2}'.format(action, snapshot, repository)
+        )
+    if action == 'restore' and index_list == None:
+        raise MissingArgument(
+            'An index_list must accompany "action" {0}'.format(action)
+        )
+    elif action == 'reindex':
+        try:
+            task_dict = client.tasks.get(task_id=task_id)
+        except Exception as e:
+            # This exception should only exist in API usage. It should never
+            # occur in regular Curator usage.
+            raise CuratorException(
+                'Unable to find task_id {0}. Exception: {1}'.format(task_id, e)
+            )
+
+    # Now with this mapped, we can perform the wait as indicated.
+    start_time = datetime.now()
+    result = False
+    while True:
+        elapsed = int((datetime.now() - start_time).total_seconds())
+        logger.debug('Elapsed time: {0} seconds'.format(elapsed))
+        response = action_map[action]['function'](
+            client, **action_map[action]['args'])
+        logger.debug('Response: {0}'.format(response))
+        # Success
+        if response:
+            logger.debug(
+                'Action "{0}" finished executing (may or may not have been '
+                'successful)'.format(action))
+            result = True
+            break
+        # Not success, and reached maximum wait (if defined)
+        elif (max_wait != -1) and (elapsed >= max_wait):
+            logger.error(
+                'Unable to complete action "{0}" within max_wait ({1}) '
+                'seconds.'.format(action, max_wait)
+            )
+            break
+        # Not success, so we wait.
+        else:
+            logger.debug(
+                'Action "{0}" not yet complete, {1} total seconds elapsed. '
+                'Waiting {1} seconds before checking '
+                'again.'.format(action, wait_interval))
+            time.sleep(wait_interval)
+
+    logger.debug('Result: {0}'.format(result))
+    if result == False:
+        raise ActionTimeout(
+            'Action "{0}" failed to complete in the max_wait period of '
+            '{1} seconds'.format(action, max_wait)
+        )
