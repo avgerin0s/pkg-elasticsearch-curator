@@ -9,7 +9,8 @@ Build-Depends: debhelper (>= 10),
                python-all,
                python-setuptools,
                python-click,
-               python-elasticsearch (>= 1.0.0),
+               python-elasticsearch (>= 5.0.0),
+               python-elasticsearch (<< 6.0.0),
                python-elasticsearch-doc,
                python3-all,
                python3-setuptools,
@@ -52,8 +53,8 @@ Description: command-line tool for managing Elasticsearch time-series indices
 
 Package: python-elasticsearch-curator
 Architecture: all
-Depends: ${misc:Depends}, ${python:Depends}, python-elasticsearch (>= 1.0.0),
-         python-pkg-resources
+Depends: ${misc:Depends}, ${python:Depends}, python-elasticsearch (>= 5.0.0),
+  python-elasticsearch (<< 6.0.0), python-pkg-resources
 Suggests: python-elasticsearch-curator-doc
 Description: Python library for managing Elasticsearch time-series indices
  Elasticsearch Curator helps manage Elasticsearch time-series indices. It
