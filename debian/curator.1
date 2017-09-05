@@ -1,9 +1,9 @@
-.TH CURATOR "1" "December 2016" "curator 4.2" "User Commands"
+.TH CURATOR, "1" "September 2017" "curator 5.1.2" "User Commands"
 .SH NAME
 \fBcurator\fP \- Elasticsearch time-series index manager
 
 .SH SYNOPSIS
-curator [\-\-config CONFIG.YML] [\-\-dry\-run] ACTION_FILE.YML
+curator [\-\-config CONFIG.YML] [\-\-dry\-run] \fI\,ACTION_FILE\/\fR
 
 .SH DESCRIPTION
 \fBcurator\fP helps manage Elasticsearch time-series indices. It provides an
@@ -11,13 +11,15 @@ easy way to perform index administration tasks, such as managing aliases,
 optimizing indices, changing the replica count and modifying index allocation
 using routing tags.
 
+See https://www.elastic.co/guide/en/elasticsearch/client/curator/5.1/index.html
+
 .SH OPTIONS
 .TP
-\fB\-h\fR, \fB\-\-help\fR
-show program usage and exit
+\fB\-\-help\fR
+Show program usage and exit.
 .TP
-\fB\-v\fR, \fB\-\-version\fR
-show program's version number and exit
+\fB\-\-version\fR
+Show program's version number and exit.
 .TP
 \fB\-\-config\fR PATH
 Path to configuration file. Default: ~/.curator/curator.yml
@@ -25,7 +27,7 @@ Path to configuration file. Default: ~/.curator/curator.yml
 \fB\-\-dry\-run\fR
 Do not perform any changes.
 
-ACTION_FILE is a YAML curator action file. For more information on action files, consult
+\fi\,ACTION_FILE\fP is a YAML curator action file. For more information on action files, consult
 .BR /usr/share/doc/elasticsearch-curator/reference.txt.gz .
 
 .SH "EXIT CODES"
@@ -47,13 +49,13 @@ An exception was raised that does not result in an exit code of 1
 Additional documentation for
 .B curator
 can be found at the project's wiki at
-https://github.com/elasticsearch/curator/wiki and (on Debian systems) under
+https://github.com/elastic/curator/wiki and (on Debian systems) under
 .BR /usr/share/doc/elasticsearch-curator/reference.txt.gz .
 
 .SH AUTHOR
 \fBcurator\fP was originally written by Aaron Mildenstein
-<aaron@mildensteins.com>. It is currently maintained by Elasticsearch
-<http://www.elasticsearch.org/>.
+<aaron@mildensteins.com>. It is currently maintained by Elastic
+<http://www.elastic.co/>.
 
 This manual page was written by Apollon Oikonomopoulos <apoikos@debian.org> for
 the Debian project (but may be used by others).
@@ -62,4 +64,4 @@ the Debian project (but may be used by others).
 This software is released under the Apache License, Version 2.0. See
 /usr/share/doc/elasticsearch-curator/copyright for more details.
 
-Copyright 2011-2016 Elasticsearch and contributors.
+Copyright 2011-2017 Elasticsearch and contributors.
