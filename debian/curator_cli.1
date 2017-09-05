@@ -1,13 +1,14 @@
-.TH CURATOR "1" "December 2016" "curator 4.2" "User Commands"
+.TH CURATOR "1" "September 2017" "curator 5.1.2" "User Commands"
 .SH NAME
 \fBcurator\fP \- Elasticsearch time-series index manager
 
 .SH SYNOPSIS
-curator_cli [\-h] [\-v] [\-\-host HOST] [\-\-url_prefix URL_PREFIX]
+curator_cli [\-help] [\-version] [\-\-host HOST] [\-\-url_prefix URL_PREFIX]
 [\-\-port PORT] [\-\-use_ssl] [\-\-http_auth AUTH]
 [\-\-timeout TIMEOUT] [\-\-master\-only] [\-\-dry\-run]
 [\-\-loglevel LOG_LEVEL] [\-\-logfile LOG_FILE]
-[\-\-logformat LOGFORMAT]
+[\-\-logformat LOGFORMAT] [\-\-certificate PATH] [\-\-client\-cert PATH]
+[\-\-client\-key PATH]
 \fICOMMAND\fP [\fICOMMAND_OPTS\fP] \fIARGUMENTS\fP
 
 .SH DESCRIPTION
@@ -18,17 +19,20 @@ using routing tags.
 
 .SH OPTIONS
 .TP
-\fB\-h\fR, \fB\-\-help\fR
-show program usage and exit
+\fB\-\-help\fR
+Show program's usage and exit.
 .TP
-\fB\-v\fR, \fB\-\-version\fR
-show program's version number and exit
+\fB\-\-version\fR
+Show program's version and exit.
+.TP
+\fB\-\-config\fR PATH
+Path to configuration file. Default: ~/.curator/curator.yml
 .TP
 \fB\-\-host\fR HOST
 Elasticsearch host. Default: localhost
 .TP
 \fB\-\-url_prefix\fR URL_PREFIX
-Elasticsearch HTTP url prefix. Default: none
+Elasticsearch http url prefix. Default: none
 .TP
 \fB\-\-port\fR PORT
 Elasticsearch port. Default: 9200
@@ -36,37 +40,38 @@ Elasticsearch port. Default: 9200
 \fB\-\-use_ssl\fR
 Connect to Elasticsearch through SSL. Default: false
 .TP
-\fB\-\-certificate\fR
+\fB\-\-certificate\fR PATH
 Path to certificate to use for SSL validation.
 .TP
-\fB\-\-client\-cert\fR
+\fB\-\-client\-cert\fR PATH
 Path to file containing SSL certificate for client auth.
+.TP
+\fB\-\-client\-key\fR PATH
+Path to file containing SSL key for client auth.
 .TP
 \fB\-\-ssl\-no\-validate\fR
 Do not validate SSL certificate
 .TP
 \fB\-\-http_auth\fR AUTH
-Use Basic Authentication ex: user:pass Default: None
+Use Basic Authentication ex: user:pass. Default: none
 .TP
 \fB\-\-timeout\fR TIMEOUT
 Connection timeout in seconds.
 .TP
 \fB\-\-master\-only\fR
-Verify that the node is the elected master before
-continuing
+Verify that the node is the elected master before continuing.
 .TP
 \fB\-\-dry\-run\fR
-If true, does not perform any changes to the
-Elasticsearch indices.
+If true, does not perform any changes to the Elasticsearch indices.
 .TP
 \fB\-\-loglevel\fR LOG_LEVEL
 Log level
 .TP
 \fB\-\-logfile\fR LOG_FILE
-log file
+Log file
 .TP
 \fB\-\-logformat\fR LOGFORMAT
-Log output format [default|logstash]. Default: default
+Log output format [default|logstash|json].
 
 .SH COMMANDS
 Each of the following commands accepts a number of options and positional
@@ -122,13 +127,13 @@ An exception was raised that does not result in an exit code of 1
 Additional documentation for
 .B curator_cli
 can be found at the project's wiki at
-https://github.com/elasticsearch/curator/wiki and (on Debian systems) under
+https://github.com/elastic/curator/wiki and (on Debian systems) under
 .BR /usr/share/doc/elasticsearch-curator/reference.txt.gz .
 
 .SH AUTHOR
 \fBcurator\fP was originally written by Aaron Mildenstein
 <aaron@mildensteins.com>. It is currently maintained by Elasticsearch
-<http://www.elasticsearch.org/>.
+<http://www.elastic.co/>.
 
 This manual page was written by Apollon Oikonomopoulos <apoikos@debian.org> for
 the Debian project (but may be used by others).
@@ -137,4 +142,4 @@ the Debian project (but may be used by others).
 This software is released under the Apache License, Version 2.0. See
 /usr/share/doc/elasticsearch-curator/copyright for more details.
 
-Copyright 2011-2016 Elasticsearch and contributors.
+Copyright 2011-2017 Elasticsearch and contributors.
